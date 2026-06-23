@@ -3,3 +3,6 @@ logs
 .wwebjs*
 clientes.csv
 texto.md
+*.png
+*.zip
+*.pdf
