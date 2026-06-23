@@ -236,6 +236,10 @@
  */
 
 const fs = require("fs");
+const crypto = require("crypto");
+const http = require("http");
+const https = require("https");
+const os = require("os");
 const path = require("path");
 const readline = require("readline");
 
@@ -243,7 +247,7 @@ require("dotenv").config({ path: path.resolve(__dirname, ".env"), quiet: true })
 
 const qrcode = require("qrcode-terminal");
 const { parse } = require("csv-parse/sync");
-const { Client, LocalAuth } = require("whatsapp-web.js");
+const { Client, LocalAuth, MessageMedia } = require("whatsapp-web.js");
 
 const ROOT_DIR = __dirname;
 const REQUIRED_COLUMNS = ["nome", "telefone", "conta"];
@@ -257,6 +261,7 @@ const PATHS = Object.freeze({
   errors: path.resolve(ROOT_DIR, "logs", "erros.csv"),
   warnings: path.resolve(ROOT_DIR, "logs", "avisos.csv"),
   auth: path.resolve(ROOT_DIR, ".wwebjs_auth"),
+  mediaCacheDir: path.resolve(os.tmpdir(), "whatsapp-rcf-media"),
 });
 
 const MIN_DELAY_MS = readIntegerEnv("MIN_DELAY_MS", 8000);
@@ -396,6 +401,235 @@ function applyTemplate(template, data, options = {}) {
     const value = data[key] ?? "";
     return key === "nome" ? formatNameForMessage(value) : value;
   });
+}
+
+function parseTemplateParts(renderedTemplate) {
+  const parts = [];
+  const mediaPattern = /!\[[^\]]*]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = mediaPattern.exec(renderedTemplate)) !== null) {
+    const text = renderedTemplate.slice(lastIndex, match.index);
+
+    if (text.trim()) {
+      parts.push({ type: "text", value: text });
+    }
+
+    parts.push({
+      type: "media",
+      source: normalizeMediaSource(match[1]),
+      raw: match[0],
+    });
+
+    lastIndex = mediaPattern.lastIndex;
+  }
+
+  const tail = renderedTemplate.slice(lastIndex);
+
+  if (tail.trim()) {
+    parts.push({ type: "text", value: tail });
+  }
+
+  return parts;
+}
+
+function normalizeMediaSource(source) {
+  return String(source || "")
+    .trim()
+    .replace(/^<(.+)>$/, "$1")
+    .replace(/^["'](.+)["']$/, "$1")
+    .trim();
+}
+
+function isUrl(value) {
+  return /^https?:\/\//i.test(value);
+}
+
+function hashValue(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function extensionFromContentType(contentType) {
+  const type = String(contentType || "").split(";")[0].trim().toLowerCase();
+  const map = {
+    "application/pdf": ".pdf",
+    "application/zip": ".zip",
+    "image/gif": ".gif",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "text/plain": ".txt",
+  };
+
+  return map[type] || "";
+}
+
+function extensionFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const ext = path.extname(parsed.pathname);
+    return ext && ext.length <= 12 ? ext : "";
+  } catch {
+    return "";
+  }
+}
+
+function findCachedDownload(cacheDir, url) {
+  if (!fs.existsSync(cacheDir)) {
+    return undefined;
+  }
+
+  const hash = hashValue(url);
+  const entry = fs
+    .readdirSync(cacheDir, { withFileTypes: true })
+    .find((dirent) => dirent.isFile() && dirent.name.startsWith(hash));
+
+  return entry ? path.join(cacheDir, entry.name) : undefined;
+}
+
+function resolveLocalMediaPath(source, templatePath) {
+  const filePath = path.isAbsolute(source)
+    ? source
+    : path.resolve(path.dirname(templatePath), source);
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Anexo não encontrado: ${source}`);
+  }
+
+  if (!fs.statSync(filePath).isFile()) {
+    throw new Error(`Anexo não é um arquivo: ${source}`);
+  }
+
+  return filePath;
+}
+
+async function resolveMediaPath(source, paths = PATHS, downloadCache = new Map()) {
+  if (!source) {
+    throw new Error("Anexo sem caminho definido.");
+  }
+
+  if (!isUrl(source)) {
+    return resolveLocalMediaPath(source, paths.template);
+  }
+
+  if (downloadCache.has(source)) {
+    return downloadCache.get(source);
+  }
+
+  const downloadedPath = await downloadMediaUrl(source, paths.mediaCacheDir);
+  downloadCache.set(source, downloadedPath);
+  return downloadedPath;
+}
+
+async function downloadMediaUrl(url, cacheDir = PATHS.mediaCacheDir) {
+  fs.mkdirSync(cacheDir, { recursive: true });
+
+  const cachedPath = findCachedDownload(cacheDir, url);
+
+  if (cachedPath) {
+    return cachedPath;
+  }
+
+  const extFromUrl = extensionFromUrl(url);
+  const pendingPath = path.join(cacheDir, `${hashValue(url)}${extFromUrl}`);
+
+  if (fs.existsSync(pendingPath)) {
+    return pendingPath;
+  }
+
+  const response = await fetchUrlBuffer(url);
+  const ext = extFromUrl || extensionFromContentType(response.contentType);
+  const filePath = path.join(cacheDir, `${hashValue(url)}${ext}`);
+
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, response.body);
+  }
+
+  return filePath;
+}
+
+function fetchUrlBuffer(url, redirectCount = 0) {
+  if (redirectCount > 5) {
+    return Promise.reject(new Error(`Redirecionamentos demais ao baixar: ${url}`));
+  }
+
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const transport = parsed.protocol === "https:" ? https : http;
+
+    const request = transport.get(parsed, (response) => {
+      const statusCode = response.statusCode || 0;
+      const location = response.headers.location;
+
+      if (statusCode >= 300 && statusCode < 400 && location) {
+        response.resume();
+        resolve(fetchUrlBuffer(new URL(location, parsed).toString(), redirectCount + 1));
+        return;
+      }
+
+      if (statusCode < 200 || statusCode >= 300) {
+        response.resume();
+        reject(new Error(`Falha ao baixar anexo (${statusCode}): ${url}`));
+        return;
+      }
+
+      const chunks = [];
+
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        resolve({
+          body: Buffer.concat(chunks),
+          contentType: response.headers["content-type"],
+        });
+      });
+    });
+
+    request.on("error", reject);
+    request.setTimeout(60000, () => {
+      request.destroy(new Error(`Tempo esgotado ao baixar anexo: ${url}`));
+    });
+  });
+}
+
+function shouldSendAsDocument(media) {
+  return !String(media.mimetype || "").startsWith("image/");
+}
+
+function validateTemplateMediaReferences(template, paths = PATHS) {
+  const issues = [];
+
+  for (const part of parseTemplateParts(template)) {
+    if (part.type !== "media" || isUrl(part.source)) {
+      continue;
+    }
+
+    try {
+      resolveLocalMediaPath(part.source, paths.template);
+    } catch (err) {
+      issues.push(err.message);
+    }
+  }
+
+  return issues;
+}
+
+async function sendRenderedTemplate(client, chatId, renderedTemplate, paths = PATHS) {
+  const parts = parseTemplateParts(renderedTemplate);
+  const downloadCache = new Map();
+
+  for (const part of parts) {
+    if (part.type === "text") {
+      await client.sendMessage(chatId, part.value);
+      continue;
+    }
+
+    const filePath = await resolveMediaPath(part.source, paths, downloadCache);
+    const media = MessageMedia.fromFilePath(filePath);
+    await client.sendMessage(chatId, media, {
+      sendMediaAsDocument: shouldSendAsDocument(media),
+    });
+  }
 }
 
 function supportsStatusUi() {
@@ -687,6 +921,8 @@ function validateRuntimeFiles(paths = PATHS, options = {}) {
     if (template.trim().length === 0) {
       issues.push("Template inválido: texto.md está vazio.");
     }
+
+    issues.push(...validateTemplateMediaReferences(template, paths));
   } catch (err) {
     issues.push(err.message);
   }
@@ -791,7 +1027,7 @@ async function processCampaign(client, paths = PATHS) {
         status.warning(`Variável ausente: ${field}`);
       }
 
-      await client.sendMessage(numberId._serialized, mensagem);
+      await sendRenderedTemplate(client, numberId._serialized, mensagem, paths);
 
       appendLog(paths.sent, [telefone, new Date().toISOString()]);
       enviados.add(telefone);
@@ -887,6 +1123,10 @@ module.exports = {
   findPuppeteerCacheBrowsers,
   getWindowsBrowserCandidates,
   formatNameForMessage,
+  parseTemplateParts,
+  resolveMediaPath,
+  sendRenderedTemplate,
+  validateTemplateMediaReferences,
   loadAlreadySent,
   loadCsv,
   loadTemplate,

@@ -3,6 +3,7 @@ process.env.MAX_DELAY_MS = "0";
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
@@ -12,7 +13,9 @@ const {
   formatNameForMessage,
   loadAlreadySent,
   loadCsv,
+  parseTemplateParts,
   processCampaign,
+  sendRenderedTemplate,
   sanitizePhone,
   validateRuntimeFiles,
 } = require("../main");
@@ -27,6 +30,7 @@ function createFixture(files = {}) {
     errors: path.join(root, "logs", "erros.csv"),
     warnings: path.join(root, "logs", "avisos.csv"),
     auth: path.join(root, ".wwebjs_auth"),
+    mediaCacheDir: path.join(root, "media-cache"),
   };
 
   fs.writeFileSync(
@@ -72,6 +76,16 @@ test("substitui variável ausente por vazio e permite registrar aviso", () => {
 
   assert.equal(result, "Olá Ana Maria. ");
   assert.deepEqual(missing, ["inexistente"]);
+});
+
+test("interpreta notação markdown de anexo preservando a ordem", () => {
+  const parts = parseTemplateParts("Antes\n![](arquivo.pdf)\nDepois");
+
+  assert.deepEqual(parts, [
+    { type: "text", value: "Antes\n" },
+    { type: "media", source: "arquivo.pdf", raw: "![](arquivo.pdf)" },
+    { type: "text", value: "\nDepois" },
+  ]);
 });
 
 test("pré-validação cria arquivos de auditoria sem iniciar WhatsApp", () => {
@@ -155,4 +169,65 @@ test("envia somente após validação positiva e registra variáveis ausentes", 
   ]);
   assert.match(fs.readFileSync(paths.sent, "utf8"), /5519998240000/);
   assert.match(fs.readFileSync(paths.warnings, "utf8"), /VARIAVEL_AUSENTE;extra/);
+});
+
+test("envia anexo local no ponto da notação markdown", async () => {
+  const { paths } = createFixture();
+  const mediaPath = path.join(path.dirname(paths.template), "arquivo.pdf");
+  fs.writeFileSync(mediaPath, "conteúdo fictício", "utf8");
+
+  const calls = [];
+  const client = {
+    async sendMessage(to, content, options) {
+      calls.push({
+        filename: content && content.filename,
+        mimetype: content && content.mimetype,
+        options,
+        text: typeof content === "string" ? content : undefined,
+        to,
+      });
+    },
+  };
+
+  await sendRenderedTemplate(
+    client,
+    "5511999999999@c.us",
+    "Antes\n![](arquivo.pdf)\nDepois",
+    paths,
+  );
+
+  assert.deepEqual(calls.map((call) => call.text || call.filename), [
+    "Antes\n",
+    "arquivo.pdf",
+    "\nDepois",
+  ]);
+  assert.equal(calls[1].mimetype, "application/pdf");
+  assert.equal(calls[1].options.sendMediaAsDocument, true);
+});
+
+test("baixa URL de anexo uma única vez e reutiliza o cache", async () => {
+  const { paths } = createFixture();
+  let requests = 0;
+  const server = http.createServer((req, res) => {
+    requests += 1;
+    res.writeHead(200, { "content-type": "image/png" });
+    res.end(Buffer.from("imagem fictícia"));
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const url = `http://127.0.0.1:${port}/anexo.png`;
+    const client = {
+      async sendMessage() {},
+    };
+
+    await sendRenderedTemplate(client, "5511999999999@c.us", `![](${url})`, paths);
+    await sendRenderedTemplate(client, "5511999999999@c.us", `![](${url})`, paths);
+
+    assert.equal(requests, 1);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });

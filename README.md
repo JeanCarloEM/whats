@@ -76,6 +76,24 @@ Relativo à sua conta ${conta}, podemos falar agora?
 
 Se uma variável não existir no CSV, ela será substituída por vazio e registrada em `logs/avisos.csv`.
 
+Anexos podem ser indicados com a notação Markdown:
+
+```markdown
+Segue a imagem:
+
+![](anexos/exemplo.png)
+
+Segue também o documento:
+
+![](C:\caminho\ficticio\arquivo.pdf)
+
+Arquivo remoto:
+
+![](https://exemplo.invalid/arquivo.zip)
+```
+
+O caminho pode ser relativo ao `texto.md`, absoluto ou uma URL `http`/`https`. URLs são baixadas para uma pasta temporária e reutilizadas quando o mesmo endereço aparecer novamente. Imagens são enviadas como mídia; outros tipos, como PDF ou ZIP, são enviados como documento.
+
 ### `.env` opcional
 
 O projeto tenta encontrar automaticamente Chrome ou Edge no Windows. Se precisar indicar o navegador manualmente, crie um arquivo `.env`:
