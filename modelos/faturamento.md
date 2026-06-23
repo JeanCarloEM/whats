@@ -1,4 +1,4 @@
-*${nome}$* , é o _JEAN_ Carlo falando aqui. Espero que esteja bem!
+*${nome}*, $diatarde$. Espero que esteja bem!
 
 🚨 Precisamos *atualizar* o cadastro com o faturamento dos últimos *12 meses* .  
 
