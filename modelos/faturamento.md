@@ -8,4 +8,4 @@ Como fazer?
 
 ⚠️ Atenção: Um sócio/dirigente *PRECISA* ASSINAR, independente da opção.  
 
-Prazo: urgente.
+Prazo: *urgente*.
