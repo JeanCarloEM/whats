@@ -11,7 +11,12 @@ const { initLogFiles, resetSentLog } = require("./logs");
 const { parseExpression } = require("./expression");
 const { processCampaign, validateRuntimeFiles } = require("./campaign");
 const { parseListFilter } = require("./data");
-const { listSessions, updateSessionPhone } = require("./sessions");
+const {
+  createSession,
+  listSessions,
+  renameSession,
+  updateSessionPhone,
+} = require("./sessions");
 const { readClientPhone } = require("./whatsapp");
 
 const GUI_HOST = "127.0.0.1";
@@ -58,6 +63,12 @@ function registerGuiClientHandlers(client, basePaths = PATHS, baseOptions = {}) 
     state.whatsappReady = true;
     updateSessionPhone(basePaths.activeSession, readClientPhone(client));
     state.sessions = listSessions(basePaths);
+    state.activeSession =
+      state.sessions.find((session) => {
+        return (
+          basePaths.activeSession && session.id === basePaths.activeSession.id
+        );
+      }) || state.activeSession;
     pushGuiLog(state, {
       message: "WhatsApp conectado. A execução já pode ser configurada.",
       type: "sent",
@@ -89,11 +100,14 @@ function registerGuiClientHandlers(client, basePaths = PATHS, baseOptions = {}) 
 
 function startGuiServer(client, basePaths = PATHS, baseOptions = {}) {
   const state = createGuiState(basePaths);
-  const server = http.createServer((req, res) => {
+  let server;
+
+  server = http.createServer((req, res) => {
     routeGuiRequest(req, res, {
       baseOptions,
       basePaths,
       client,
+      server,
       state,
     }).catch((err) => {
       sendJson(res, 500, {
@@ -144,9 +158,98 @@ async function routeGuiRequest(req, res, context) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/status") {
+    context.state.sessions = listSessions(context.basePaths);
     sendJson(res, 200, {
       ok: true,
       state: context.state,
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/sessions/switch") {
+    const payload = await readJsonBody(req);
+    const sessionId = String(payload.sessionId || "").trim();
+
+    if (!sessionId) {
+      sendJson(res, 400, {
+        error: "Selecione uma sessão.",
+        ok: false,
+      });
+      return;
+    }
+
+    if (context.state.busy) {
+      sendJson(res, 409, {
+        error: "Não é possível alternar sessão durante um processamento.",
+        ok: false,
+      });
+      return;
+    }
+
+    sendJson(res, 202, {
+      message: "Alternando sessão. A janela será reaberta.",
+      ok: true,
+    });
+    scheduleGuiRestart(context, sessionId);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/sessions/create") {
+    const payload = await readJsonBody(req);
+    const name = String(payload.name || "").trim();
+
+    if (!name) {
+      sendJson(res, 400, {
+        error: "Informe um nome para a nova sessão.",
+        ok: false,
+      });
+      return;
+    }
+
+    if (context.state.busy) {
+      sendJson(res, 409, {
+        error: "Não é possível criar sessão durante um processamento.",
+        ok: false,
+      });
+      return;
+    }
+
+    const session = createSession(name);
+    context.state.sessions = listSessions(context.basePaths);
+    sendJson(res, 201, {
+      message: "Sessão criada. Alternando para autenticação.",
+      ok: true,
+      session,
+    });
+    scheduleGuiRestart(context, session.id);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/sessions/rename") {
+    const payload = await readJsonBody(req);
+    const sessionId = String(payload.sessionId || "").trim();
+    const name = String(payload.name || "").trim();
+
+    if (!sessionId || !name) {
+      sendJson(res, 400, {
+        error: "Informe a sessão e o novo nome.",
+        ok: false,
+      });
+      return;
+    }
+
+    const session = renameSession(sessionId, name);
+    context.state.sessions = listSessions(context.basePaths);
+
+    if (context.state.activeSession && context.state.activeSession.id === session.id) {
+      context.state.activeSession = session;
+    }
+
+    sendJson(res, 200, {
+      message: "Sessão renomeada.",
+      ok: true,
+      session,
+      sessions: context.state.sessions,
     });
     return;
   }
@@ -409,6 +512,62 @@ function pushGuiLog(state, event) {
   if (state.log.length > 300) {
     state.log.splice(0, state.log.length - 300);
   }
+}
+
+function scheduleGuiRestart(context, sessionId) {
+  context.state.status = "reiniciando_sessao";
+  context.state.whatsappReady = false;
+  pushGuiLog(context.state, {
+    message: "Reiniciando para alternar a sessão do WhatsApp.",
+    type: "warning",
+  });
+
+  setTimeout(() => {
+    restartGuiProcess(context, sessionId).catch((err) => {
+      context.state.status = "erro";
+      context.state.lastError = err.message;
+      pushGuiLog(context.state, {
+        message: `Falha ao alternar sessão: ${err.message}`,
+        type: "error",
+      });
+    });
+  }, 250);
+}
+
+async function restartGuiProcess(context, sessionId) {
+  const args = [path.join(ROOT_DIR, "main.js"), "--gui", "--session", sessionId];
+
+  try {
+    if (context.client && typeof context.client.destroy === "function") {
+      await context.client.destroy();
+    }
+  } catch (_) {
+    // A troca de sessão deve prosseguir mesmo se o encerramento do client falhar.
+  }
+
+  await closeServer(context.server);
+
+  const child = childProcess.spawn(process.execPath, args, {
+    cwd: ROOT_DIR,
+    detached: true,
+    env: process.env,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+
+  child.unref();
+  process.exit(0);
+}
+
+function closeServer(server) {
+  return new Promise((resolve) => {
+    if (!server || !server.listening) {
+      resolve();
+      return;
+    }
+
+    server.close(() => resolve());
+  });
 }
 
 function readJsonBody(req) {
@@ -687,6 +846,13 @@ function renderGuiHtml() {
       margin-top: 12px;
     }
 
+    .session-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+
     .checks label {
       display: inline-flex;
       align-items: center;
@@ -795,9 +961,15 @@ function renderGuiHtml() {
       <form id="runForm">
         <section>
           <h2>Sessão</h2>
-          <label for="sessionSelect">WhatsApp</label>
-          <select id="sessionSelect" disabled></select>
-          <div class="hint">A sessão é selecionada antes da abertura do WhatsApp. Para alternar, execute com --session ou crie uma nova sessão com --new-session.</div>
+          <div class="session-row">
+            <div>
+              <label for="sessionSelect">WhatsApp</label>
+              <select id="sessionSelect"></select>
+            </div>
+            <button id="newSessionButton" type="button">Criar</button>
+            <button id="renameSessionButton" type="button">Renomear</button>
+          </div>
+          <div class="hint">Ao alternar ou criar sessão, o WhatsApp é reiniciado automaticamente para carregar o perfil escolhido.</div>
         </section>
 
         <section>
@@ -864,6 +1036,10 @@ function renderGuiHtml() {
     const log = document.getElementById("log");
     const statusPill = document.getElementById("statusPill");
     const sessionSelect = document.getElementById("sessionSelect");
+    const newSessionButton = document.getElementById("newSessionButton");
+    const renameSessionButton = document.getElementById("renameSessionButton");
+    let activeSessionId = "";
+    let lastSessionCount = 0;
     let pollTimer = null;
 
     function showMessage(text, type) {
@@ -957,6 +1133,8 @@ function renderGuiHtml() {
     function renderSessions(state) {
       const sessions = state.sessions || [];
       const active = state.activeSession && state.activeSession.id;
+      activeSessionId = active || "";
+      lastSessionCount = sessions.length;
       sessionSelect.innerHTML = "";
       for (const session of sessions) {
         const option = document.createElement("option");
@@ -965,7 +1143,9 @@ function renderGuiHtml() {
         option.selected = session.id === active;
         sessionSelect.append(option);
       }
-      sessionSelect.disabled = true;
+      sessionSelect.disabled = sessions.length <= 1 || Boolean(state.busy);
+      newSessionButton.disabled = Boolean(state.busy);
+      renameSessionButton.disabled = !active || Boolean(state.busy);
     }
 
     function statusLabel(status, ready) {
@@ -980,6 +1160,7 @@ function renderGuiHtml() {
         executando: "Executando",
         falha_autenticacao: "Falha de autenticação",
         iniciando_whatsapp: "Iniciando WhatsApp",
+        reiniciando_sessao: "Reiniciando sessão",
         validando: "Validando",
       };
       return labels[status] || "Aguardando";
@@ -1013,6 +1194,57 @@ function renderGuiHtml() {
       } catch (err) {
         showMessage(err.message, "error");
         button.disabled = false;
+      }
+    });
+
+    sessionSelect.addEventListener("change", async () => {
+      const sessionId = sessionSelect.value;
+      if (!sessionId || sessionId === activeSessionId) return;
+
+      const selectedText = sessionSelect.options[sessionSelect.selectedIndex].textContent;
+      const confirmed = window.confirm("Alternar para " + selectedText + "? O WhatsApp será reiniciado.");
+
+      if (!confirmed) {
+        sessionSelect.value = activeSessionId;
+        return;
+      }
+
+      try {
+        await postJson("/api/sessions/switch", { sessionId });
+        showMessage("Alternando sessão. A interface será reaberta.", "ok");
+      } catch (err) {
+        showMessage(err.message, "error");
+        sessionSelect.value = activeSessionId;
+      }
+    });
+
+    newSessionButton.addEventListener("click", async () => {
+      const name = window.prompt("Nome da nova sessão:");
+      if (!name || !name.trim()) return;
+
+      try {
+        await postJson("/api/sessions/create", { name: name.trim() });
+        showMessage("Sessão criada. Reiniciando para autenticar.", "ok");
+      } catch (err) {
+        showMessage(err.message, "error");
+      }
+    });
+
+    renameSessionButton.addEventListener("click", async () => {
+      if (!activeSessionId) return;
+      const currentText = sessionSelect.options[sessionSelect.selectedIndex]?.textContent || "";
+      const name = window.prompt("Novo nome da sessão:", currentText.replace(/\\s*\\(\\d{4}\\)\\s*$/, ""));
+      if (!name || !name.trim()) return;
+
+      try {
+        const data = await postJson("/api/sessions/rename", {
+          name: name.trim(),
+          sessionId: activeSessionId,
+        });
+        showMessage(data.message || "Sessão renomeada.", "ok");
+        await refreshStatus();
+      } catch (err) {
+        showMessage(err.message, "error");
       }
     });
 

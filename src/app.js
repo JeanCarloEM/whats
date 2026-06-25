@@ -10,6 +10,7 @@ const { validateRuntimeFiles } = require("./campaign");
 const { createWhatsAppClient, registerClientHandlers } = require("./whatsapp");
 const {
   applySessionToPaths,
+  listSessions,
   renameSession,
   selectSessionForExecution,
 } = require("./sessions");
@@ -39,7 +40,10 @@ async function main() {
       return;
     }
 
-    const selectedSession = await selectSessionForExecution(options, PATHS);
+    const selectedSession =
+      options.gui && !options.session && !options.newSessionName
+        ? listSessions(PATHS)[0]
+        : await selectSessionForExecution(options, PATHS);
     const sessionPaths = applySessionToPaths(PATHS, selectedSession);
     console.log(`Sessão selecionada: ${selectedSession.displayName}`);
 

@@ -438,6 +438,8 @@ node main.js --session 1234 --gui
 
 Se houver múltiplas sessões e nenhuma for informada, a CLI mostra um menu obrigatório. Sessões nomeadas usam logs em `logs/sessions/NOME/`; a sessão padrão mantém `logs/`.
 
+Na GUI, o seletor de sessão permite alternar entre sessões existentes. A troca reinicia automaticamente o client do WhatsApp e reabre a interface na sessão escolhida, pois o perfil do `LocalAuth` é definido antes de abrir o WhatsApp Web. Também é possível criar e renomear sessões diretamente pela tela.
+
 Para renomear:
 
 ```powershell

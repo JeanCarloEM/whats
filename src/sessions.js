@@ -168,7 +168,11 @@ async function selectSessionForExecution(options = {}, paths = PATHS) {
 
 function createSession(name) {
   const store = loadSessionStore();
-  const sessionId = uniqueSessionId(normalizeSessionId(name), store.sessions);
+  const existingIds = new Set([
+    ...Object.keys(store.sessions || {}),
+    ...discoverSessionIds(PATHS.auth),
+  ]);
+  const sessionId = uniqueSessionId(normalizeSessionId(name), existingIds);
   const now = new Date().toISOString();
   const session = normalizeSessionRecord(sessionId, {
     createdAt: now,
@@ -200,7 +204,7 @@ function uniqueSessionId(baseId, sessions) {
   let id = baseId === DEFAULT_SESSION_ID ? "sessao" : baseId;
   let counter = 2;
 
-  while (sessions[id]) {
+  while (sessions.has ? sessions.has(id) : sessions[id]) {
     id = `${baseId}-${counter}`;
     counter += 1;
   }

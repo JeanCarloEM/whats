@@ -248,11 +248,13 @@ Os scripts devem verificar navegador compatível. Se Chrome, Edge ou Chromium n�
 
 ### RN024 - Sessões de WhatsApp
 
-O sistema deve suportar múltiplas sessões independentes de WhatsApp por `LocalAuth`, com nome amigável, persistência local e seleção por `--session`.
+O sistema deve suportar múltiplas sessões independentes de WhatsApp por `LocalAuth`, com nome amigável, persistência local e seleção por `--session` ou pela GUI.
 
 Quando houver apenas uma sessão, ela deve ser selecionada automaticamente. Quando houver múltiplas sessões e nenhuma for informada na CLI, deve ser exibido menu obrigatório. Identificação por nome deve ser insensível a maiúsculas/minúsculas; identificação por telefone pode usar os últimos dígitos desde que o resultado seja único.
 
 Sessões nomeadas devem usar logs separados em `./logs/sessions/NOME_DA_SESSAO/`. A sessão padrão preserva os logs legados em `./logs/`.
+
+A GUI deve permitir criar, renomear e alternar sessões. Como a sessão do WhatsApp é definida na inicialização do `LocalAuth`, alternar ou criar sessão pela GUI pode reiniciar automaticamente o processo, fechar o navegador controlado atual e reabrir a interface na sessão escolhida.
 
 ### RN025 - Múltiplos Modelos
 
