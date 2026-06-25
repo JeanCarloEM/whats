@@ -7,6 +7,7 @@ const { resetSentLog } = require("./logs");
 const { formatBrowserStartupError } = require("./browser");
 const { validateRuntimeFiles } = require("./campaign");
 const { createWhatsAppClient, registerClientHandlers } = require("./whatsapp");
+const { registerGuiClientHandlers } = require("./gui");
 
 async function main() {
   try {
@@ -14,6 +15,13 @@ async function main() {
 
     if (options.help) {
       printHelp();
+      return;
+    }
+
+    if (options.gui) {
+      const client = createWhatsAppClient(PATHS);
+      registerGuiClientHandlers(client, PATHS, options);
+      await client.initialize();
       return;
     }
 

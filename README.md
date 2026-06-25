@@ -4,6 +4,7 @@ Aplicativo local em Node.js para enviar mensagens personalizadas pelo WhatsApp W
 
 - `clientes.csv` como base de destinatários.
 - `texto.md` como modelo da mensagem.
+- interface gráfica local no navegador para configurar a execução.
 - sessão local persistida em `.wwebjs_auth`.
 - logs locais em `logs/`.
 
@@ -13,9 +14,10 @@ Todos os nomes, telefones, contas e caminhos abaixo são meramente ilustrativos.
 
 ## RCF Implementado
 
-O projeto segue um RCF local com estas regras principais:
+O contrato funcional completo está em [RCF.md](RCF.md). Em resumo, o projeto:
 
 - usa `clientes.csv` e `texto.md`, ou arquivos em `listas/` e `modelos/`, como entradas da campanha;
+- oferece GUI local para coletar modelo, CSV, filtro e opções de execução;
 - valida CSV, template, logs, anexos locais, sessão e navegador antes de enviar;
 - substitui variáveis `${coluna}` a partir das colunas do CSV sem diferenciar maiúsculas e minúsculas;
 - permite expressões matemáticas simples dentro de `${...}`;
@@ -47,17 +49,27 @@ As dependências usadas pelo projeto (`csv-parse`, `dotenv`, `qrcode-terminal`, 
 
 ## Instalação
 
-Na pasta do projeto:
+### Modo recomendado
 
 ```powershell
 cd C:\caminho\do\projeto
-npm install
+.\start.cmd
 ```
 
 Em macOS/Linux:
 
 ```bash
 cd /caminho/do/projeto
+sh ./start.sh
+```
+
+Esses scripts verificam Node.js e npm, tentam instalar Node.js LTS quando ele estiver ausente, instalam dependências do projeto apenas quando necessário e iniciam a interface gráfica.
+
+### Instalação manual
+
+Na pasta do projeto:
+
+```powershell
 npm install
 ```
 
@@ -390,7 +402,42 @@ Faça uma validação antes de enviar:
 npm run check
 ```
 
-Inicie o disparador:
+### Interface gráfica
+
+Inicie o fluxo assistido:
+
+```powershell
+npm run start:gui
+```
+
+Ou use os inicializadores:
+
+```powershell
+.\start.cmd
+```
+
+Em macOS/Linux:
+
+```bash
+sh ./start.sh
+```
+
+O navegador será aberto para autenticação do WhatsApp. Quando o WhatsApp estiver conectado, o sistema abrirá uma página local em `127.0.0.1` para configurar:
+
+- modelo por textarea;
+- modelo por arquivo `.md`;
+- filtro;
+- CSV opcional de clientes;
+- reenvio forçado;
+- limpeza do histórico de enviados.
+
+Textarea e arquivo `.md` são mutuamente exclusivos. A tela faz validações leves antes de enviar os dados ao backend local, e o backend reaproveita a mesma pré-validação RCF antes do primeiro envio.
+
+Quando um modelo for informado pela GUI, ele substitui `texto.md` apenas naquela execução. Caminhos relativos de anexos digitados na tela são resolvidos a partir da raiz do projeto.
+
+### Linha de comando
+
+O modo CLI continua disponível para automação:
 
 ```powershell
 npm start
@@ -406,7 +453,10 @@ Quando um registro é pulado, o console mostra o motivo. O caso mais comum é o 
 
 | Comando | Função |
 | --- | --- |
-| `npm start` | Valida e inicia o envio. |
+| `.\start.cmd` | Prepara dependências e inicia a GUI no Windows. |
+| `sh ./start.sh` | Prepara dependências e inicia a GUI no macOS/Linux. |
+| `npm run start:gui` | Autentica e abre a interface gráfica local. |
+| `npm start` | Valida e inicia o envio via CLI. |
 | `npm start -- faturamento` | Usa `modelos/faturamento.md` no lugar de `texto.md`. |
 | `node main.js --lista base_exemplo` | Usa `listas/base_exemplo.csv` no lugar de `clientes.csv`. |
 | `node main.js faturamento base_exemplo` | Usa modelo e lista nomeados. |

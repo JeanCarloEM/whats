@@ -6,6 +6,7 @@ module.exports = {
   ...require("./config"),
   ...require("./data"),
   ...require("./expression"),
+  ...require("./gui"),
   ...require("./logs"),
   ...require("./media"),
   ...require("./status"),

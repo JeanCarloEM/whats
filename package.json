@@ -8,8 +8,10 @@
   "main": "main.js",
   "scripts": {
     "start": "node main.js",
+    "gui": "node main.js --gui",
     "start:clear": "node main.js --clear-sent",
     "start:force": "node main.js --force-resend",
+    "start:gui": "node main.js --gui",
     "sent:clear": "node main.js --clear-sent",
     "start:reset": "node main.js --reset-sent",
     "check": "node main.js --check",

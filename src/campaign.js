@@ -82,11 +82,24 @@ async function processCampaign(client, paths = PATHS, options = {}) {
   const status = createStatusReporter(clientes.length);
 
   console.log(`Clientes encontrados: ${clientes.length}`);
+  emitProgress(options, {
+    message: `Clientes encontrados: ${clientes.length}`,
+    total: clientes.length,
+    type: "info",
+  });
 
-  for (const cliente of clientes) {
+  for (let index = 0; index < clientes.length; index += 1) {
+    const cliente = clientes[index];
     const telefoneOriginal = getRecordValue(cliente, "telefone");
     const telefone = sanitizePhone(telefoneOriginal);
     status.current(`Validando ${maskPhone(telefone)}`);
+    emitProgress(options, {
+      current: index + 1,
+      message: `Validando ${maskPhone(telefone)}`,
+      telefone: maskPhone(telefone),
+      total: clientes.length,
+      type: "current",
+    });
 
     try {
       if (!telefone) {
@@ -101,6 +114,12 @@ async function processCampaign(client, paths = PATHS, options = {}) {
 
         status.event(`Pulando registro: ${reason}`, "red");
         status.error("Telefone inválido");
+        emitProgress(options, {
+          current: index + 1,
+          message: `Pulando registro: ${reason}`,
+          total: clientes.length,
+          type: "skip",
+        });
         continue;
       }
 
@@ -124,6 +143,13 @@ async function processCampaign(client, paths = PATHS, options = {}) {
           "yellow",
         );
         status.skip(`Já enviado ${maskPhone(telefone)}`);
+        emitProgress(options, {
+          current: index + 1,
+          message: `Pulando ${maskPhone(telefone)}: ${sendDecision.reason}`,
+          telefone: maskPhone(telefone),
+          total: clientes.length,
+          type: "skip",
+        });
         continue;
       }
 
@@ -150,6 +176,13 @@ async function processCampaign(client, paths = PATHS, options = {}) {
 
         status.event(`Pulando ${maskPhone(telefone)}: ${reason}`, "red");
         status.error(`Sem WhatsApp ${maskPhone(telefone)}`);
+        emitProgress(options, {
+          current: index + 1,
+          message: `Pulando ${maskPhone(telefone)}: ${reason}`,
+          telefone: maskPhone(telefone),
+          total: clientes.length,
+          type: "skip",
+        });
         continue;
       }
 
@@ -181,9 +214,22 @@ async function processCampaign(client, paths = PATHS, options = {}) {
       });
 
       status.sent(`Enviado ${maskPhone(telefone)}`);
+      emitProgress(options, {
+        current: index + 1,
+        message: `Enviado ${maskPhone(telefone)}`,
+        telefone: maskPhone(telefone),
+        total: clientes.length,
+        type: "sent",
+      });
 
       const delay = randomDelay();
       status.current(`Aguardando ${Math.round(delay / 1000)}s`);
+      emitProgress(options, {
+        current: index + 1,
+        message: `Aguardando ${Math.round(delay / 1000)}s`,
+        total: clientes.length,
+        type: "wait",
+      });
       await sleep(delay);
     } catch (err) {
       appendLog(paths.errors, [
@@ -194,10 +240,37 @@ async function processCampaign(client, paths = PATHS, options = {}) {
       ]);
 
       status.error(`Erro ${maskPhone(telefone)}: ${err.message}`);
+      emitProgress(options, {
+        current: index + 1,
+        message: `Erro ${maskPhone(telefone)}: ${err.message}`,
+        telefone: maskPhone(telefone),
+        total: clientes.length,
+        type: "error",
+      });
     }
   }
 
   status.finish();
+  emitProgress(options, {
+    message: "Processamento concluído.",
+    total: clientes.length,
+    type: "done",
+  });
+}
+
+function emitProgress(options, event) {
+  if (typeof options.onProgress !== "function") {
+    return;
+  }
+
+  try {
+    options.onProgress({
+      at: new Date().toISOString(),
+      ...event,
+    });
+  } catch (_) {
+    // Progresso da interface não pode interferir na regra de envio.
+  }
 }
 
 module.exports = {

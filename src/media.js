@@ -65,10 +65,10 @@ function findCachedDownload(cacheDir, url) {
   return entry ? path.join(cacheDir, entry.name) : undefined;
 }
 
-function resolveLocalMediaPath(source, templatePath) {
+function resolveLocalMediaPath(source, templatePath, baseDir) {
   const filePath = path.isAbsolute(source)
     ? source
-    : path.resolve(path.dirname(templatePath), source);
+    : path.resolve(baseDir || path.dirname(templatePath), source);
 
   if (!fs.existsSync(filePath)) {
     throw new Error(`Anexo não encontrado: ${source}`);
@@ -87,7 +87,7 @@ async function resolveMediaPath(source, paths = PATHS, downloadCache = new Map()
   }
 
   if (!isUrl(source)) {
-    return resolveLocalMediaPath(source, paths.template);
+    return resolveLocalMediaPath(source, paths.template, paths.templateBaseDir);
   }
 
   if (downloadCache.has(source)) {
@@ -300,7 +300,7 @@ function validateTemplateMediaReferences(template, paths = PATHS) {
     }
 
     try {
-      resolveLocalMediaPath(part.source, paths.template);
+      resolveLocalMediaPath(part.source, paths.template, paths.templateBaseDir);
     } catch (err) {
       issues.push(err.message);
     }

@@ -31,6 +31,7 @@ const {
   loadClientes,
   loadCsv,
   loadSentRecords,
+  materializeGuiExecutionPaths,
   parseExecutionOptions,
   parseExpression,
   parseTemplateParts,
@@ -43,6 +44,7 @@ const {
   sendRenderedTemplate,
   toBoolean,
   sanitizePhone,
+  validateGuiPayload,
   validateRuntimeFiles,
 } = require("../main");
 
@@ -343,6 +345,51 @@ test("pré-validação cria arquivos de auditoria sem iniciar WhatsApp", () => {
   assert.equal(fs.existsSync(paths.errors), true);
   assert.equal(fs.existsSync(paths.skipped), true);
   assert.equal(fs.existsSync(paths.warnings), true);
+});
+
+test("GUI bloqueia textarea e arquivo de modelo usados ao mesmo tempo", () => {
+  const { paths } = createFixture();
+  const result = validateGuiPayload(
+    {
+      templateFile: {
+        content: "Olá ${nome}",
+        name: "modelo.md",
+      },
+      templateText: "Olá ${nome}",
+    },
+    paths,
+  );
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join("\n"), /apenas uma fonte de modelo/);
+});
+
+test("GUI materializa entradas temporárias sem alterar arquivos padrão", () => {
+  const { paths } = createFixture({
+    csv: "nome,telefone,status\nBase,11999999999,inativo\n",
+    template: "Mensagem original ${nome}",
+  });
+  const originalCsv = fs.readFileSync(paths.csv, "utf8");
+  const originalTemplate = fs.readFileSync(paths.template, "utf8");
+
+  const guiPaths = materializeGuiExecutionPaths(
+    {
+      csvFile: {
+        content: "nome,telefone,status\nTela,11988888888,ativo\n",
+        name: "clientes.csv",
+      },
+      filter: "status=ativo",
+      templateText: "Mensagem da tela ${NOME}",
+    },
+    paths,
+  );
+
+  assert.notEqual(guiPaths.csv, paths.csv);
+  assert.notEqual(guiPaths.template, paths.template);
+  assert.equal(fs.readFileSync(paths.csv, "utf8"), originalCsv);
+  assert.equal(fs.readFileSync(paths.template, "utf8"), originalTemplate);
+  assert.deepEqual(loadClientes(guiPaths).map((cliente) => cliente.nome), ["Tela"]);
+  assert.equal(applyTemplate(fs.readFileSync(guiPaths.template, "utf8"), { nome: "tela exemplo" }), "Mensagem da tela Tela Exemplo");
 });
 
 test("resolve modelo opcional dentro de ./modelos", () => {

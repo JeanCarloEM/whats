@@ -40,6 +40,7 @@ function parseExecutionOptions(argv = process.argv.slice(2)) {
   const options = {
     check: false,
     forceResend: false,
+    gui: false,
     help: false,
     listArg: undefined,
     resetSent: false,
@@ -55,6 +56,11 @@ function parseExecutionOptions(argv = process.argv.slice(2)) {
 
     if (arg === "--check") {
       options.check = true;
+      continue;
+    }
+
+    if (["--gui", "--interface", "--tela"].includes(arg)) {
+      options.gui = true;
       continue;
     }
 
@@ -160,6 +166,7 @@ function printHelp() {
 
 Opções:
   --check             Valida arquivos e configuração sem enviar.
+  --gui               Abre a interface gráfica local após autenticar.
   --force-resend      Ignora logs/enviados.csv nesta execução e reenvia.
   --lista VALOR       Usa ./listas/VALOR.csv ou filtra clientes.csv se contiver = ou !=.
   --modelo VALOR      Usa ./modelos/VALOR.md.
