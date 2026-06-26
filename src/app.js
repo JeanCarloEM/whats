@@ -62,7 +62,7 @@ async function main() {
     }
 
     const selectedSession =
-      options.gui && !options.session && !options.newSessionName
+      (options.gui || options.check) && !options.session && !options.newSessionName
         ? listSessions(PATHS)[0]
         : await selectSessionForExecution(options, PATHS);
     const sessionPaths = applySessionToPaths(PATHS, selectedSession);

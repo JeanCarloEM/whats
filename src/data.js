@@ -16,6 +16,38 @@ const {
   stripWrappingQuotes,
 } = require("./utils");
 
+const CSV_DELIMITER_CANDIDATES = [",", ";", "\t", "|"];
+const CSV_QUOTE_CANDIDATES = ['"', "'"];
+const WINDOWS_1252_EXTRA_CHARS = {
+  0x80: "\u20ac",
+  0x82: "\u201a",
+  0x83: "\u0192",
+  0x84: "\u201e",
+  0x85: "\u2026",
+  0x86: "\u2020",
+  0x87: "\u2021",
+  0x88: "\u02c6",
+  0x89: "\u2030",
+  0x8a: "\u0160",
+  0x8b: "\u2039",
+  0x8c: "\u0152",
+  0x8e: "\u017d",
+  0x91: "\u2018",
+  0x92: "\u2019",
+  0x93: "\u201c",
+  0x94: "\u201d",
+  0x95: "\u2022",
+  0x96: "\u2013",
+  0x97: "\u2014",
+  0x98: "\u02dc",
+  0x99: "\u2122",
+  0x9a: "\u0161",
+  0x9b: "\u203a",
+  0x9c: "\u0153",
+  0x9e: "\u017e",
+  0x9f: "\u0178",
+};
+
 function readTextFile(filePath, label) {
   if (!fs.existsSync(filePath)) {
     throw new Error(`${label} não encontrado: ${filePath}`);
@@ -26,7 +58,94 @@ function readTextFile(filePath, label) {
     throw new Error(`${label} não é um arquivo: ${filePath}`);
   }
 
-  return fs.readFileSync(filePath, "utf8");
+  return decodeTextBuffer(fs.readFileSync(filePath));
+}
+
+function decodeTextBuffer(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf) {
+    return buffer.subarray(3).toString("utf8");
+  }
+
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return buffer.subarray(2).toString("utf16le");
+  }
+
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    return decodeUtf16Be(buffer.subarray(2));
+  }
+
+  if (looksLikeUtf16Le(buffer)) {
+    return buffer.toString("utf16le");
+  }
+
+  if (looksLikeUtf16Be(buffer)) {
+    return decodeUtf16Be(buffer);
+  }
+
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+  } catch (_) {
+    return decodeWindows1252(buffer);
+  }
+}
+
+function looksLikeUtf16Le(buffer) {
+  if (buffer.length < 4) {
+    return false;
+  }
+
+  let nulls = 0;
+  let samples = 0;
+
+  for (let index = 1; index < Math.min(buffer.length, 200); index += 2) {
+    samples += 1;
+
+    if (buffer[index] === 0) {
+      nulls += 1;
+    }
+  }
+
+  return samples > 0 && nulls / samples > 0.6;
+}
+
+function looksLikeUtf16Be(buffer) {
+  if (buffer.length < 4) {
+    return false;
+  }
+
+  let nulls = 0;
+  let samples = 0;
+
+  for (let index = 0; index < Math.min(buffer.length, 200); index += 2) {
+    samples += 1;
+
+    if (buffer[index] === 0) {
+      nulls += 1;
+    }
+  }
+
+  return samples > 0 && nulls / samples > 0.6;
+}
+
+function decodeUtf16Be(buffer) {
+  const swapped = Buffer.alloc(buffer.length);
+
+  for (let index = 0; index < buffer.length; index += 2) {
+    swapped[index] = buffer[index + 1] || 0;
+    swapped[index + 1] = buffer[index] || 0;
+  }
+
+  return swapped.toString("utf16le");
+}
+
+function decodeWindows1252(buffer) {
+  let result = "";
+
+  for (const byte of buffer) {
+    result += WINDOWS_1252_EXTRA_CHARS[byte] || String.fromCharCode(byte);
+  }
+
+  return result;
 }
 
 function loadTemplate(filePath = PATHS.template) {
@@ -35,18 +154,8 @@ function loadTemplate(filePath = PATHS.template) {
 
 function loadCsv(filePath = PATHS.csv) {
   const csv = readTextFile(filePath, "CSV de clientes");
-  let rows;
-
-  try {
-    rows = parse(csv, {
-      bom: true,
-      relax_column_count_less: true,
-      skip_empty_lines: true,
-      trim: true,
-    });
-  } catch (err) {
-    throw new Error(`CSV inválido: ${err.message}`);
-  }
+  const csvFormat = detectCsvFormat(csv);
+  const rows = csvFormat.rows;
 
   if (rows.length === 0) {
     throw new Error("CSV inválido: arquivo vazio.");
@@ -67,7 +176,10 @@ function loadCsv(filePath = PATHS.csv) {
   try {
     return parse(csv, {
       columns: (columns) => columns.map((column) => String(column).trim()),
-      relax_column_count_less: true,
+      delimiter: csvFormat.delimiter,
+      quote: csvFormat.quote,
+      relax_column_count: true,
+      relax_quotes: true,
       skip_empty_lines: true,
       bom: true,
       trim: true,
@@ -75,6 +187,90 @@ function loadCsv(filePath = PATHS.csv) {
   } catch (err) {
     throw new Error(`CSV inválido: ${err.message}`);
   }
+}
+
+function detectCsvFormat(csv) {
+  const attempts = [];
+
+  for (const delimiter of CSV_DELIMITER_CANDIDATES) {
+    for (const quote of CSV_QUOTE_CANDIDATES) {
+      try {
+        const rows = parse(csv, {
+          bom: true,
+          delimiter,
+          quote,
+          relax_column_count: true,
+          relax_quotes: true,
+          skip_empty_lines: true,
+          trim: true,
+        });
+
+        attempts.push({
+          delimiter,
+          quote,
+          rows,
+          score: scoreCsvParse(rows, delimiter, quote),
+        });
+      } catch (_) {
+        // Formatos incompatíveis são ignorados e outros candidatos são testados.
+      }
+    }
+  }
+
+  attempts.sort((a, b) => b.score - a.score);
+
+  const best = attempts[0];
+
+  if (!best || best.rows.length === 0) {
+    throw new Error("CSV inválido: arquivo vazio ou formato não reconhecido.");
+  }
+
+  return best;
+}
+
+function scoreCsvParse(rows, delimiter, quote) {
+  if (!rows.length) {
+    return -Infinity;
+  }
+
+  const header = rows[0].map((column) => String(column).trim());
+  const normalizedHeader = header.map(normalizeFieldName);
+  const requiredMatches = REQUIRED_COLUMNS.filter((column) =>
+    normalizedHeader.includes(normalizeFieldName(column)),
+  ).length;
+  const expectedLength = header.length;
+  const consistentRows = rows.filter((row) => row.length === expectedLength).length;
+  const nonEmptyHeaderColumns = header.filter(Boolean).length;
+  const firstLines = String(rows.slice(0, 5).flat().join("\n"));
+  const delimiterHits = (firstLines.match(new RegExp(escapeRegExp(delimiter), "g")) || []).length;
+  const wrappedQuoteCells = rows
+    .slice(1, 10)
+    .flat()
+    .filter((cell) => hasWrappingQuote(cell, quote)).length;
+
+  return (
+    requiredMatches * 1000 +
+    Math.min(nonEmptyHeaderColumns, 20) * 10 +
+    consistentRows * 4 +
+    delimiterHits -
+    wrappedQuoteCells * 20 -
+    (expectedLength <= 1 ? 100 : 0)
+  );
+}
+
+function hasWrappingQuote(value, quote) {
+  const text = String(value || "").trim();
+
+  if (text.length < 2) {
+    return false;
+  }
+
+  const otherQuote = quote === "'" ? '"' : "'";
+  return text.startsWith(otherQuote) && text.endsWith(otherQuote);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function loadClientes(paths = PATHS) {

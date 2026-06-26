@@ -41,6 +41,10 @@ O nome da coluna do filtro deve ser insensível a maiúsculas e minúsculas. O f
 
 O CSV deve conter obrigatoriamente apenas as colunas `nome` e `telefone`. Colunas adicionais devem ficar disponíveis automaticamente como variáveis no template.
 
+O carregamento do CSV deve aceitar codificações comuns em arquivos salvos por Excel, Bloco de Notas e planilhas, incluindo UTF-8 com ou sem BOM, UTF-16 e ANSI/Windows-1252, preservando acentuação, `ç` e símbolos compatíveis.
+
+O parser deve inferir delimitadores comuns de arquivo e campo, incluindo vírgula, ponto e vírgula, tabulação e `|`, além de texto delimitado por aspas duplas ou simples.
+
 ### RN002 - Template de Mensagem
 
 O template padrão deve ser carregado de `./texto.md`.

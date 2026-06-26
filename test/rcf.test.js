@@ -290,6 +290,51 @@ test("permite coluna opcional sem valor na linha do CSV", () => {
   assert.equal(rows[0].telefone, "19998240000");
 });
 
+test("CSV detecta delimitador de planilha brasileira e preserva UTF-8", () => {
+  const { paths } = createFixture({
+    csv:
+      "nome;telefone;observacao;valor\n" +
+      "João Ação;11999999999;Acentuação com ç;120,50\n" +
+      "Maria;21988887777;Texto comum;80\n",
+  });
+
+  const rows = loadCsv(paths.csv);
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].nome, "João Ação");
+  assert.equal(rows[0].observacao, "Acentuação com ç");
+  assert.equal(rows[0].valor, "120,50");
+});
+
+test("CSV aceita ANSI Windows-1252 comum no Excel e Bloco de Notas", () => {
+  const { paths } = createFixture();
+  const ansiCsv = Buffer.from(
+    "nome;telefone;observacao\nJo\xe3o A\xe7\xe3o;11999999999;A\xe7\xfacar e cora\xe7\xe3o\n",
+    "latin1",
+  );
+
+  fs.writeFileSync(paths.csv, ansiCsv);
+
+  const rows = loadCsv(paths.csv);
+
+  assert.equal(rows[0].nome, "João Ação");
+  assert.equal(rows[0].observacao, "Açúcar e coração");
+});
+
+test("CSV aceita tabulação e aspas simples como delimitadores textuais", () => {
+  const { paths } = createFixture({
+    csv:
+      "nome\ttelefone\tobservacao\n" +
+      "'Pessoa Teste'\t'11999999999'\t'Texto com vírgula, ponto e ç'\n",
+  });
+
+  const rows = loadCsv(paths.csv);
+
+  assert.equal(rows[0].nome, "Pessoa Teste");
+  assert.equal(rows[0].telefone, "11999999999");
+  assert.equal(rows[0].observacao, "Texto com vírgula, ponto e ç");
+});
+
 test("substitui variável ausente por vazio e permite registrar aviso", () => {
   const missing = [];
   const result = applyTemplate("Olá ${nome}. ${inexistente}", { nome: "ana maria silva" }, {

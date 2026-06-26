@@ -1,3 +1,3 @@
-nome,telefone,valor,taxa,status,vigente,conta
-Pessoa Exemplo,11999999999,"120,50","9,50",ativo,sim,123456
-Cliente Teste,21988887777,80,0,ativo,true,654321
+nome;telefone;valor;taxa;status;vigente;conta;observacao
+Pessoa Ação;11999999999;120,50;9,50;ativo;sim;123456;Cliente com acentuação e ç
+Cliente Teste;21988887777;80;0;ativo;true;654321;Linha exportada por planilha

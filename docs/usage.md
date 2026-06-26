@@ -50,6 +50,8 @@ node main.js --lista base_exemplo
 node main.js faturamento base_exemplo
 ```
 
+O carregamento do CSV tenta aceitar exportações comuns do Excel, Bloco de Notas e planilhas em geral. A leitura detecta UTF-8 com ou sem BOM, UTF-16 e ANSI/Windows-1252, preservando acentuação, `ç` e símbolos comuns. O parser também infere delimitadores frequentes: vírgula, ponto e vírgula, tabulação e `|`, com texto delimitado por aspas duplas ou simples.
+
 Se o parametro tiver expressao de filtro, ele sera aplicado sobre `clientes.csv`:
 
 ```powershell

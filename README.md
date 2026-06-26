@@ -107,6 +107,8 @@ nome,telefone,valor,status
 Pessoa Exemplo,11999999999,"120,50",ativo
 ```
 
+O CSV pode estar em UTF-8 ou ANSI/Windows-1252 e o parser tenta inferir delimitadores comuns de planilha, como `,`, `;`, tab e `|`, preservando acentos e `ç`.
+
 `texto.md` exemplo:
 
 ```markdown
