@@ -13,7 +13,7 @@ const path = require("path");
 const zlib = require("zlib");
 
 const OWNER = "JeanCarloEM";
-const REPO = "whatsender";
+const REPO = "WhatSend";
 const ROOT_DIR = path.resolve(__dirname, "..");
 const GITHUB_API = `https://api.github.com/repos/${OWNER}/${REPO}`;
 const MAIN_TARBALL_URL = `https://codeload.github.com/${OWNER}/${REPO}/tar.gz/refs/heads/main`;

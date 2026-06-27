@@ -1,6 +1,6 @@
-# WhatSender
+# WhatSend
 
-[![CI](https://github.com/JeanCarloEM/whatsender/actions/workflows/ci.yml/badge.svg)](https://github.com/JeanCarloEM/whatsender/actions/workflows/ci.yml)
+[![CI](https://github.com/JeanCarloEM/WhatSend/actions/workflows/ci.yml/badge.svg)](https://github.com/JeanCarloEM/WhatSend/actions/workflows/ci.yml)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-brightgreen.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-LTS-339933.svg)](https://nodejs.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue.svg)](#requisitos)
@@ -26,7 +26,7 @@ Todos os nomes, telefones, contas, caminhos e URLs deste README sao exemplos fic
 
 ## Visao geral
 
-O WhatSender usa `clientes.csv` como base de destinatarios e `texto.md` como modelo padrao. Antes de enviar, valida arquivos, anexos, logs, navegador e numeros do WhatsApp com `client.getNumberId()`.
+O WhatSend usa `clientes.csv` como base de destinatarios e `texto.md` como modelo padrao. Antes de enviar, valida arquivos, anexos, logs, navegador e numeros do WhatsApp com `client.getNumberId()`.
 
 Principais recursos:
 
@@ -56,14 +56,14 @@ Os inicializadores tentam preparar dependencias e navegador automaticamente. Se 
 Windows:
 
 ```powershell
-cd C:\caminho\ficticio\whatsender
+cd C:\caminho\ficticio\WhatSend
 .\start.cmd
 ```
 
 macOS/Linux:
 
 ```bash
-cd /caminho/ficticio/whatsender
+cd /caminho/ficticio/WhatSend
 sh ./start.sh
 ```
 
@@ -242,7 +242,7 @@ Os testes cobrem parser, filtros, template, anexos, logs, sessoes e validacoes c
 
 Autor: JeanCarloEM.com
 
-Repositorio: <https://github.com/JeanCarloEM/whatsender>
+Repositorio: <https://github.com/JeanCarloEM/WhatSend>
 
 Licenca: [Mozilla Public License 2.0](LICENSE), tambem disponivel em <https://www.mozilla.org/MPL/2.0/>.
 

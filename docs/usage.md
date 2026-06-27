@@ -168,7 +168,7 @@ Se `GUI_PORT` estiver ocupada, a interface tenta automaticamente portas próxima
 
 ## Atualizacao
 
-Os inicializadores de atualizacao nao dependem de `git` nem de existir `.git` na pasta local. Eles consultam `https://github.com/JeanCarloEM/whatsender`, baixam a release mais recente quando houver release publicada e, se nao houver release, baixam a branch `main`.
+Os inicializadores de atualizacao nao dependem de `git` nem de existir `.git` na pasta local. Eles consultam `https://github.com/JeanCarloEM/WhatSend`, baixam a release mais recente quando houver release publicada e, se nao houver release, baixam a branch `main`.
 
 ```powershell
 .\atualizar.cmd

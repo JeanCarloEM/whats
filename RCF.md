@@ -308,7 +308,7 @@ Devem existir scripts de atualização no root para Windows e macOS/Linux.
 
 A atualização não deve depender da existência de `git` nem de diretório local `./.git`.
 
-O atualizador deve consultar `https://github.com/JeanCarloEM/whatsender`, baixar a release mais recente quando houver release publicada e, se não houver release, baixar a branch `main`.
+O atualizador deve consultar `https://github.com/JeanCarloEM/WhatSend`, baixar a release mais recente quando houver release publicada e, se não houver release, baixar a branch `main`.
 
 Arquivos operacionais locais devem ser preservados durante a atualização, incluindo `clientes.csv`, `texto.md`, `.env`, logs, sessões do WhatsApp, runtime local e `node_modules`.
 
