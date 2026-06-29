@@ -70,7 +70,9 @@ sh ./start.sh
 Instalacao manual:
 
 ```powershell
+$env:PUPPETEER_SKIP_DOWNLOAD="true"
 npm install
+Remove-Item Env:\PUPPETEER_SKIP_DOWNLOAD -ErrorAction SilentlyContinue
 npm run browser:ensure
 npm run check
 ```

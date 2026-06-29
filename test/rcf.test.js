@@ -85,6 +85,7 @@ const {
 
 const COMPLEX_CLIENTS_CSV = path.join(__dirname, "clientes-complexos.csv");
 const COMPLEX_EXPECTED_JSON = path.join(__dirname, "expressions-complexas.expected.json");
+const PROJECT_ROOT = path.resolve(__dirname, "..");
 
 function createFixture(files = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "whatsapp-rcf-"));
@@ -278,6 +279,18 @@ test("build dist preserva cabeçalho legal e limita exclusão operacional à rai
   assert.equal(shouldExcludeRootFile("texto.md"), true);
   assert.equal(shouldExcludeDistEntry("clientes.csv"), false);
   assert.equal(shouldExcludeDistEntry("texto.md"), false);
+});
+
+test("scripts start instalam dependências sem acionar download implícito do Puppeteer", () => {
+  const startBat = fs.readFileSync(path.join(PROJECT_ROOT, "start.bat"), "utf8");
+  const startSh = fs.readFileSync(path.join(PROJECT_ROOT, "start.sh"), "utf8");
+
+  assert.match(startBat, /PUPPETEER_SKIP_DOWNLOAD=true/);
+  assert.match(startBat, /PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true/);
+  assert.match(startBat, /set "PUPPETEER_SKIP_DOWNLOAD="/);
+  assert.match(startSh, /export PUPPETEER_SKIP_DOWNLOAD=true/);
+  assert.match(startSh, /export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true/);
+  assert.match(startSh, /unset PUPPETEER_SKIP_DOWNLOAD/);
 });
 
 test("status interativo renderiza sem erro", () => {

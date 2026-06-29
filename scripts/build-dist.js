@@ -67,7 +67,7 @@ const LEGAL_HEADER_KEYWORDS = [
 ];
 
 async function buildDist() {
-  fs.rmSync(DIST_DIR, { force: true, recursive: true });
+  cleanDistDirectory();
   fs.mkdirSync(DIST_DIR, { recursive: true });
 
   for (const fileName of ROOT_FILES) {
@@ -88,6 +88,21 @@ async function buildDist() {
   await minifyJavaScriptFiles(DIST_DIR);
   validateBuiltDist();
   console.log(`Release distribuível gerada em ${path.relative(ROOT_DIR, DIST_DIR)}`);
+}
+
+function cleanDistDirectory() {
+  if (!fs.existsSync(DIST_DIR)) {
+    return;
+  }
+
+  for (const entry of sortedDirents(DIST_DIR)) {
+    fs.rmSync(path.join(DIST_DIR, entry.name), {
+      force: true,
+      maxRetries: 8,
+      recursive: true,
+      retryDelay: 250,
+    });
+  }
 }
 
 function copyRootFile(fileName) {

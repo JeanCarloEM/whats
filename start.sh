@@ -54,6 +54,8 @@ fi
 
 if [ ! -d node_modules ]; then
   echo "Instalando dependencias do projeto..."
+  export PUPPETEER_SKIP_DOWNLOAD=true
+  export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
   if [ -f package-lock.json ]; then
     npm ci
   else
@@ -62,9 +64,14 @@ if [ ! -d node_modules ]; then
 else
   if ! npm ls --depth=0 >/dev/null 2>&1; then
     echo "Ajustando dependencias ausentes..."
+    export PUPPETEER_SKIP_DOWNLOAD=true
+    export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
     npm install
   fi
 fi
+
+unset PUPPETEER_SKIP_DOWNLOAD
+unset PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
 
 echo "Verificando navegador compativel..."
 node scripts/ensure-browser.js

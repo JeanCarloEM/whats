@@ -41,6 +41,8 @@ if errorlevel 1 (
 
 if not exist node_modules (
   echo Instalando dependencias do projeto...
+  set "PUPPETEER_SKIP_DOWNLOAD=true"
+  set "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true"
   if exist package-lock.json (
     call npm ci
   ) else (
@@ -50,6 +52,8 @@ if not exist node_modules (
   call npm ls --depth=0 >nul 2>nul
   if errorlevel 1 (
     echo Ajustando dependencias ausentes...
+    set "PUPPETEER_SKIP_DOWNLOAD=true"
+    set "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true"
     call npm install
   )
 )
@@ -58,6 +62,9 @@ if errorlevel 1 (
   echo Falha ao preparar dependencias.
   exit /b 1
 )
+
+set "PUPPETEER_SKIP_DOWNLOAD="
+set "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD="
 
 echo Verificando navegador compativel...
 call node scripts\ensure-browser.js

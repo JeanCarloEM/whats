@@ -278,6 +278,8 @@ Quando Node.js estiver ausente, o script deve orientar ou tentar instalação au
 
 Os scripts devem verificar navegador compatível. Se Chrome, Edge ou Chromium não forem encontrados, devem tentar instalar automaticamente um Chrome compatível via instalador do Puppeteer.
 
+Durante a instalação automática de dependências pelos scripts de inicialização, o download implícito de navegador pelo postinstall do Puppeteer deve ser desativado. A instalação ou validação de navegador deve ocorrer somente na etapa explícita de verificação de navegador, para evitar falhas por cache parcial, ambiente sem permissão ou divergência entre dependências e navegador local.
+
 ### RN024 - Sessões de WhatsApp
 
 O sistema deve suportar múltiplas sessões independentes de WhatsApp por `LocalAuth`, com nome amigável, persistência local e seleção por `--session` ou pela GUI.
