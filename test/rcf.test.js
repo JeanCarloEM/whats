@@ -24,6 +24,7 @@ const {
   createMessageMediaFromFile,
   createRuntimeScriptSnapshot,
   createStatusReporter,
+  destroyWhatsAppClient,
   decodeHtmlEntities,
   evaluateExpression,
   evaluateFilterExpression,
@@ -60,6 +61,7 @@ const {
   resolveModelTemplatePath,
   processCampaign,
   resetSentLog,
+  renderGuiHtml,
   sendRenderedTemplate,
   splitTemplateVariants,
   toBoolean,
@@ -1080,6 +1082,58 @@ test("remove sessão apaga auth local e volta ao estado inicial quando não rest
   assert.deepEqual(listPersistedSessions(paths), []);
   assert.equal(result.remainingSessions.length, 1);
   assert.equal(result.remainingSessions[0].id, "default");
+});
+
+test("remove sessão ainda não autenticada sem exigir pasta LocalAuth", () => {
+  const { paths } = createFixture();
+  fs.writeFileSync(
+    paths.sessionsFile,
+    JSON.stringify({
+      sessions: {
+        teste: {
+          id: "teste",
+          name: "Teste",
+        },
+      },
+      version: 1,
+    }),
+    "utf8",
+  );
+
+  const result = removeSession("Teste", paths);
+
+  assert.equal(result.removed.id, "teste");
+  assert.deepEqual(listPersistedSessions(paths), []);
+  assert.equal(result.remainingSessions[0].id, "default");
+});
+
+test("encerramento do WhatsApp aguarda destroy antes de liberar sessão", async () => {
+  let destroyed = false;
+  const result = await destroyWhatsAppClient(
+    {
+      async destroy() {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        destroyed = true;
+      },
+    },
+    { graceMs: 0, timeoutMs: 200 },
+  );
+
+  assert.equal(destroyed, true);
+  assert.equal(result.destroyed, true);
+  assert.equal(result.timedOut, false);
+});
+
+test("GUI permite escolher sessão a remover sem alternar para ela", () => {
+  const html = renderGuiHtml();
+
+  assert.match(html, /Qual sessão deseja remover/);
+  assert.match(html, /askSessionToRemove/);
+  assert.match(html, /sessionToRemove\.id/);
+  assert.doesNotMatch(
+    html,
+    /postJson\("\/api\/sessions\/remove", \{\s*sessionId: activeSessionId/s,
+  );
 });
 
 test("parser avalia filtros complexos contra fixture versionada", () => {

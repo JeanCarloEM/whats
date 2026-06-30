@@ -4,6 +4,7 @@ Este projeto segue o contrato funcional descrito em [RCF.md](RCF.md).
 
 Ao alterar o sistema:
 
+- Ao término indicart um texto detalhado para commit, com até 512 caracteres, separando melhoria de fix.
 - Preserve `main.js` como ponto de execução principal e RCF operacional.
 - Mantenha a lógica de negócio em `src/`, evitando alterações diretas em `node_modules/`.
 - Atualize [RCF.md](RCF.md) quando uma regra funcional ou não funcional mudar.

@@ -30,12 +30,14 @@ const { parseListFilter } = require("./data");
 const { inspectTemplateSyntax, parseTemplateParts } = require("./template");
 const {
   createSession,
+  listPersistedSessions,
   listSessions,
   renameSession,
   removeSession,
+  resolveSessionByIdentifier,
   updateSessionPhone,
 } = require("./sessions");
-const { readClientPhone } = require("./whatsapp");
+const { destroyWhatsAppClient, readClientPhone } = require("./whatsapp");
 
 const GUI_HOST = "127.0.0.1";
 const GUI_PORT = Number.parseInt(process.env.GUI_PORT || "3137", 10);
@@ -363,27 +365,42 @@ async function routeGuiRequest(req, res, context) {
       return;
     }
 
-    const result = removeSession(sessionId, context.basePaths);
-    context.state.sessions = listSessions(context.basePaths);
+    const targetSession = resolveSessionByIdentifier(
+      sessionId,
+      listSessions(context.basePaths),
+    );
     const activeRemoved =
       context.state.activeSession &&
-      context.state.activeSession.id === result.removed.id;
+      context.state.activeSession.id === targetSession.id;
+
+    if (!activeRemoved) {
+      const result = removeSession(targetSession.id, context.basePaths);
+      context.state.sessions = listSessions(context.basePaths);
+      sendJson(res, 200, {
+        activeRemoved: false,
+        message: "Sessão removida.",
+        ok: true,
+        remainingPersisted: result.remainingPersisted,
+        removed: result.removed,
+        sessions: context.state.sessions,
+      });
+      return;
+    }
+
+    const remainingPersisted = listPersistedSessions(context.basePaths).filter(
+      (session) => session.id !== targetSession.id,
+    );
 
     sendJson(res, 200, {
-      activeRemoved,
-      message: activeRemoved
-        ? "Sessão ativa removida. Reiniciando o WhatsApp."
-        : "Sessão removida.",
+      activeRemoved: true,
+      message: "Sessão ativa será removida após fechar o WhatsApp com segurança.",
       ok: true,
-      remainingPersisted: result.remainingPersisted,
-      removed: result.removed,
-      sessions: context.state.sessions,
+      remainingPersisted,
+      removed: targetSession,
+      sessions: listSessions(context.basePaths),
     });
 
-    if (activeRemoved) {
-      const nextSession = result.remainingPersisted[0];
-      scheduleGuiRestart(context, nextSession ? nextSession.id : "");
-    }
+    scheduleActiveSessionRemoval(context, targetSession.id, remainingPersisted[0]);
 
     return;
   }
@@ -817,19 +834,50 @@ function scheduleGuiRestart(context, sessionId) {
   }, 250);
 }
 
-async function restartGuiProcess(context, sessionId) {
+function scheduleActiveSessionRemoval(context, sessionId, nextSession) {
+  context.state.status = "reiniciando_sessao";
+  context.state.whatsappReady = false;
+  pushGuiLog(context.state, {
+    message: "Fechando WhatsApp antes de remover a sessão ativa.",
+    type: "warning",
+  });
+
+  setTimeout(() => {
+    restartGuiProcess(context, nextSession ? nextSession.id : "", {
+      beforeSpawn: async () => {
+        removeSession(sessionId, context.basePaths);
+      },
+      destroyFailureMessage:
+        "A sessão ativa não foi removida porque o navegador não fechou com segurança.",
+    }).catch((err) => {
+      context.state.status = "erro";
+      context.state.lastError = err.message;
+      pushGuiLog(context.state, {
+        message: `Falha ao remover sessão ativa: ${err.message}`,
+        type: "error",
+      });
+    });
+  }, 250);
+}
+
+async function restartGuiProcess(context, sessionId, options = {}) {
   const args = [path.join(ROOT_DIR, "main.js"), "--gui"];
 
   if (sessionId) {
     args.push("--session", sessionId);
   }
 
-  try {
-    if (context.client && typeof context.client.destroy === "function") {
-      await context.client.destroy();
-    }
-  } catch (_) {
-    // A troca de sessão deve prosseguir mesmo se o encerramento do client falhar.
+  const destroyResult = await destroyWhatsAppClient(context.client);
+
+  if (!destroyResult.destroyed && options.beforeSpawn) {
+    throw new Error(
+      options.destroyFailureMessage ||
+        "O navegador não fechou com segurança; operação cancelada para preservar a sessão.",
+    );
+  }
+
+  if (options.beforeSpawn) {
+    await options.beforeSpawn();
   }
 
   await closeServer(context.server);
@@ -857,13 +905,7 @@ async function shutdownCurrentGuiProcess(context, reason) {
     type: "warning",
   });
 
-  try {
-    if (context.client && typeof context.client.destroy === "function") {
-      await context.client.destroy();
-    }
-  } catch (_) {
-    // O processo será encerrado mesmo se o navegador já tiver fechado.
-  }
+  await destroyWhatsAppClient(context.client);
 
   await closeServer(context.server);
 
@@ -1599,6 +1641,7 @@ function renderGuiHtml() {
     const templateMediaStatus = document.getElementById("templateMediaStatus");
     let activeSessionId = "";
     let lastSessionCount = 0;
+    let knownSessions = [];
     let pollTimer = null;
     let templateAnalysisTimer = null;
     let templateAnalysisToken = 0;
@@ -1810,6 +1853,7 @@ function renderGuiHtml() {
     function renderSessions(state) {
       const sessions = state.sessions || [];
       const active = state.activeSession && state.activeSession.id;
+      knownSessions = sessions;
       activeSessionId = active || "";
       lastSessionCount = sessions.length;
       sessionSelect.innerHTML = "";
@@ -1823,7 +1867,40 @@ function renderGuiHtml() {
       sessionSelect.disabled = sessions.length <= 1 || Boolean(state.busy);
       newSessionButton.disabled = Boolean(state.busy);
       renameSessionButton.disabled = !active || Boolean(state.busy);
-      removeSessionButton.disabled = !active || Boolean(state.busy);
+      removeSessionButton.disabled = sessions.length === 0 || Boolean(state.busy);
+    }
+
+    function askSessionToRemove() {
+      if (!knownSessions.length) return null;
+
+      const activeIndex = knownSessions.findIndex((session) => session.id === activeSessionId);
+      const lines = knownSessions.map((session, index) => {
+        const marker = session.id === activeSessionId ? " (ativa)" : "";
+        return (index + 1) + " - " + session.displayName + marker;
+      });
+      const answer = window.prompt(
+        "Qual sessão deseja remover? Informe o número, nome ou id.\\n\\n" + lines.join("\\n"),
+        activeIndex >= 0 ? String(activeIndex + 1) : "1",
+      );
+
+      if (!answer || !answer.trim()) return null;
+
+      const trimmed = answer.trim();
+      const index = Number.parseInt(trimmed, 10);
+
+      if (String(index) === trimmed && index >= 1 && index <= knownSessions.length) {
+        return knownSessions[index - 1];
+      }
+
+      const normalized = trimmed.toLocaleLowerCase("pt-BR");
+      const digits = trimmed.replace(/\\D/g, "");
+      return knownSessions.find((session) => {
+        return (
+          session.id.toLocaleLowerCase("pt-BR") === normalized ||
+          session.name.toLocaleLowerCase("pt-BR") === normalized ||
+          (digits && session.phone && session.phone.endsWith(digits))
+        );
+      }) || { id: trimmed, displayName: trimmed };
     }
 
     function statusLabel(status, ready) {
@@ -1961,17 +2038,21 @@ function renderGuiHtml() {
     });
 
     removeSessionButton.addEventListener("click", async () => {
-      if (!activeSessionId) return;
-      const currentText = sessionSelect.options[sessionSelect.selectedIndex]?.textContent || activeSessionId;
+      const sessionToRemove = askSessionToRemove();
+      if (!sessionToRemove) return;
+      const currentText = sessionToRemove.displayName || sessionToRemove.id;
+      const activeHint = sessionToRemove.id === activeSessionId
+        ? " O WhatsApp será fechado antes da remoção para preservar os dados da sessão."
+        : "";
       const confirmed = window.confirm(
-        "Remover a sessão " + currentText + "? A autenticação local dessa sessão será apagada."
+        "Remover a sessão " + currentText + "? A autenticação local dessa sessão será apagada." + activeHint
       );
 
       if (!confirmed) return;
 
       try {
         const data = await postJson("/api/sessions/remove", {
-          sessionId: activeSessionId,
+          sessionId: sessionToRemove.id,
         });
         showMessage(data.message || "Sessão removida.", "ok");
         if (!data.activeRemoved) {

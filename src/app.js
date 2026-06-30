@@ -15,7 +15,11 @@ const { loadTemplate, resolveExecutionPaths } = require("./data");
 const { resetSentLog } = require("./logs");
 const { formatBrowserStartupError } = require("./browser");
 const { validateRuntimeFiles } = require("./campaign");
-const { createWhatsAppClient, registerClientHandlers } = require("./whatsapp");
+const {
+  createWhatsAppClient,
+  registerClientHandlers,
+  registerClientShutdownHandlers,
+} = require("./whatsapp");
 const {
   applySessionToPaths,
   listSessions,
@@ -94,6 +98,7 @@ async function main() {
       }
 
       const client = createWhatsAppClient(sessionPaths);
+      registerClientShutdownHandlers(client);
       const guiServerInfo = await startGuiServer(client, sessionPaths, options);
       const guiRuntime = registerGuiInstance(guiServerInfo, sessionPaths);
       options.guiRuntime = guiRuntime;
@@ -147,6 +152,7 @@ async function main() {
     }
 
     const client = createWhatsAppClient(executionPaths);
+    registerClientShutdownHandlers(client);
     registerClientHandlers(client, executionPaths, options);
     await client.initialize();
   } catch (err) {

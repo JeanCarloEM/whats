@@ -181,6 +181,8 @@ A autenticação do WhatsApp deve permanecer armazenada localmente em `./.wwebjs
 
 Deve ser possível isolar uma sessão alternativa por `WA_CLIENT_ID`.
 
+Ao alternar, encerrar ou remover uma sessão em uso, o navegador controlado deve ser encerrado de forma graciosa antes de qualquer reinício ou exclusão do diretório de autenticação, aguardando tempo suficiente para que o perfil local seja gravado. Se o encerramento seguro não puder ser confirmado, a exclusão da sessão ativa deve ser cancelada para evitar corrupção ou perda parcial de autenticação.
+
 ### RN016 - Operação Local e Privacidade
 
 Dados de clientes não devem ser transmitidos para sistemas terceiros, exceto para o próprio WhatsApp durante o envio e para URLs de anexos explicitamente declaradas no template.
@@ -288,7 +290,7 @@ Quando houver apenas uma sessão, ela deve ser selecionada automaticamente. Quan
 
 Sessões nomeadas devem usar logs separados em `./logs/sessions/NOME_DA_SESSAO/`. A sessão padrão preserva os logs legados em `./logs/`.
 
-A GUI deve permitir criar, renomear, alternar e remover sessões. Como a sessão do WhatsApp é definida na inicialização do `LocalAuth`, alternar, criar ou remover a sessão ativa pela GUI pode reiniciar automaticamente o processo, fechar o navegador controlado atual e reabrir a interface na sessão escolhida. Se a última sessão persistida for removida, a próxima abertura deve retornar ao fluxo inicial de autenticação.
+A GUI deve permitir criar, renomear, alternar e remover sessões. A remoção pela GUI deve permitir escolher qualquer sessão existente, inclusive sessão não ativa ou ainda não autenticada, sem exigir alternância prévia para ela. Como a sessão do WhatsApp é definida na inicialização do `LocalAuth`, alternar, criar ou remover a sessão ativa pela GUI pode reiniciar automaticamente o processo, fechar o navegador controlado atual e reabrir a interface na sessão escolhida. Se a última sessão persistida for removida, a próxima abertura deve retornar ao fluxo inicial de autenticação.
 
 ### RN025 - Múltiplos Modelos
 

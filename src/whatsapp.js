@@ -8,10 +8,13 @@
 const qrcode = require("qrcode-terminal");
 const { Client, LocalAuth } = require("whatsapp-web.js");
 
-const { PATHS } = require("./config");
+const { PATHS, readIntegerEnv } = require("./config");
 const { buildPuppeteerConfig, getWhatsAppClientId } = require("./browser");
 const { processCampaign } = require("./campaign");
 const { updateSessionPhone } = require("./sessions");
+
+const CLIENT_DESTROY_TIMEOUT_MS = readIntegerEnv("CLIENT_DESTROY_TIMEOUT_MS", 10000);
+const CLIENT_SHUTDOWN_GRACE_MS = readIntegerEnv("CLIENT_SHUTDOWN_GRACE_MS", 700);
 
 function createWhatsAppClient(paths = PATHS) {
   return new Client({
@@ -22,6 +25,76 @@ function createWhatsAppClient(paths = PATHS) {
 
     puppeteer: buildPuppeteerConfig(),
   });
+}
+
+async function destroyWhatsAppClient(client, options = {}) {
+  if (!client || typeof client.destroy !== "function") {
+    return { destroyed: false, skipped: true, timedOut: false };
+  }
+
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? options.timeoutMs
+    : CLIENT_DESTROY_TIMEOUT_MS;
+  const graceMs = Number.isFinite(options.graceMs)
+    ? options.graceMs
+    : CLIENT_SHUTDOWN_GRACE_MS;
+  let timedOut = false;
+
+  try {
+    await Promise.race([
+      client.destroy(),
+      delay(timeoutMs).then(() => {
+        timedOut = true;
+      }),
+    ]);
+
+    if (timedOut) {
+      return { destroyed: false, skipped: false, timedOut: true };
+    }
+
+    if (graceMs > 0) {
+      await delay(graceMs);
+    }
+
+    return { destroyed: true, skipped: false, timedOut: false };
+  } catch (err) {
+    return {
+      destroyed: false,
+      error: err,
+      skipped: false,
+      timedOut: false,
+    };
+  }
+}
+
+function registerClientShutdownHandlers(client) {
+  let shuttingDown = false;
+  const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
+
+  const shutdown = async (signal) => {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown = true;
+    console.log(`Encerrando WhatsApp com segurança (${signal}).`);
+    await destroyWhatsAppClient(client);
+    process.exitCode = signal === "SIGINT" ? 130 : 143;
+    process.exit();
+  };
+
+  for (const signal of signals) {
+    try {
+      process.once(signal, () => {
+        shutdown(signal).catch(() => {
+          process.exitCode = signal === "SIGINT" ? 130 : 143;
+          process.exit();
+        });
+      });
+    } catch {
+      // Alguns sinais podem não existir em todos os ambientes.
+    }
+  }
 }
 
 function registerClientHandlers(client, paths = PATHS, options = {}) {
@@ -54,6 +127,10 @@ function registerClientHandlers(client, paths = PATHS, options = {}) {
   });
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
 function readClientPhone(client) {
   const wid =
     client &&
@@ -66,6 +143,8 @@ function readClientPhone(client) {
 
 module.exports = {
   createWhatsAppClient,
+  destroyWhatsAppClient,
   readClientPhone,
   registerClientHandlers,
+  registerClientShutdownHandlers,
 };

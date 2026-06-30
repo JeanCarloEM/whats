@@ -209,6 +209,8 @@ node main.js --remove-session Comercial
 
 Na GUI, alternar, criar ou remover a sessao ativa reinicia automaticamente o client do WhatsApp. Se a ultima sessao for removida, a proxima abertura volta ao fluxo inicial com QR Code.
 
+O botao de remover permite escolher qualquer sessao listada, mesmo que ela nao esteja ativa ou ainda nao tenha sido autenticada. Quando a sessao removida for a ativa, o navegador e fechado antes da exclusao local para preservar a gravacao do perfil.
+
 ## Logs e reenvio
 
 Os logs ficam em `logs/`:
