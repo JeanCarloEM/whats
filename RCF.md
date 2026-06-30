@@ -219,6 +219,8 @@ O console deve exibir status compacto e legível, com progresso, enviados, pulos
 
 Todo pulo deve apresentar motivo claro.
 
+Etapas potencialmente demoradas de anexos, especialmente envio de `.ogg`, retentativas, fallback de áudio de voz para áudio comum e espera por estabilização do WhatsApp Web, devem emitir progresso visual curto no terminal e na GUI para evitar percepção de travamento, sem repetir mensagens em excesso.
+
 ### RN020 - Pré-Validação Segura
 
 O comando de checagem deve validar arquivos, estrutura de logs, template, anexos locais, sessão e navegador antes de qualquer envio:

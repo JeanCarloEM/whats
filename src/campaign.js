@@ -216,7 +216,25 @@ async function processCampaign(client, paths = PATHS, options = {}) {
         status.warning(`Variável ausente: ${field}`);
       }
 
-      await sendRenderedTemplate(client, numberId._serialized, mensagem, paths);
+      await sendRenderedTemplate(client, numberId._serialized, mensagem, paths, {
+        onProgress: (event) => {
+          const mediaMessage = event.message || "Processando anexo.";
+
+          if (event.type === "warning") {
+            status.event(mediaMessage, "yellow");
+          } else {
+            status.current(mediaMessage);
+          }
+
+          emitProgress(options, {
+            current: index + 1,
+            message: mediaMessage,
+            telefone: maskPhone(telefone),
+            total: clientes.length,
+            type: event.type || "info",
+          });
+        },
+      });
 
       const sentAt = new Date().toISOString();
 

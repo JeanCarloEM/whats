@@ -1653,6 +1653,7 @@ test("retry de OGG usa mídia nova e fallback para áudio comum após falha tran
   fs.writeFileSync(mediaPath, createFakeOggAudio());
 
   const calls = [];
+  const events = [];
   const client = {
     async sendMessage(to, content, options) {
       calls.push({
@@ -1674,6 +1675,9 @@ test("retry de OGG usa mídia nova e fallback para áudio comum após falha tran
     "5511999999999@c.us",
     "Antes\n![](audio.ogg)\nDepois",
     paths,
+    {
+      onProgress: (event) => events.push(event.message),
+    },
   );
 
   const mediaCalls = calls.filter((call) => call.filename === "audio.ogg");
@@ -1686,6 +1690,10 @@ test("retry de OGG usa mídia nova e fallback para áudio comum após falha tran
   assert.equal(mediaCalls[3].options.sendAudioAsVoice, false);
   assert.equal(mediaCalls[3].options.sendMediaAsDocument, false);
   assert.equal(mediaCalls[3].options.waitUntilMsgSent, true);
+  assert.match(events.join("\n"), /Enviando áudio audio\.ogg/);
+  assert.match(events.join("\n"), /Retentando anexo audio\.ogg como áudio de voz/);
+  assert.match(events.join("\n"), /Aguardando WhatsApp Web estabilizar/);
+  assert.match(events.join("\n"), /tentando como áudio comum/);
 });
 
 test("erro de frame destacado é transitório e aguarda contexto do WhatsApp voltar", async () => {

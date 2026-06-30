@@ -440,7 +440,7 @@ function validateTemplateMediaReferences(template, paths = PATHS) {
   return issues;
 }
 
-async function sendRenderedTemplate(client, chatId, renderedTemplate, paths = PATHS) {
+async function sendRenderedTemplate(client, chatId, renderedTemplate, paths = PATHS, progressOptions = {}) {
   const parts = buildSendPlan(parseTemplateParts(renderedTemplate));
   const downloadCache = new Map();
 
@@ -451,29 +451,40 @@ async function sendRenderedTemplate(client, chatId, renderedTemplate, paths = PA
     }
 
     const filePath = await resolveMediaPath(part.source, paths, downloadCache);
+    const filename = path.basename(filePath);
 
     if (isOggAudioOnly(filePath)) {
-      await sendOggVoiceMessage(client, chatId, filePath, part);
+      emitMediaProgress(progressOptions, {
+        message: `Enviando áudio ${filename}.`,
+        type: "current",
+      });
+      await sendOggVoiceMessage(client, chatId, filePath, part, progressOptions);
       continue;
     }
 
     const media = createMessageMediaFromFile(filePath);
-    const options = {
+    emitMediaProgress(progressOptions, {
+      message: `Enviando anexo ${filename}.`,
+      type: "current",
+    });
+
+    const sendOptions = {
       sendMediaAsDocument: shouldSendAsDocument(media),
       waitUntilMsgSent: true,
     };
 
     if (part.caption) {
-      options.caption = part.caption;
+      sendOptions.caption = part.caption;
     }
 
-    await sendMediaMessageWithRetry(client, chatId, () => createMessageMediaFromFile(filePath), options, {
-      label: path.basename(filePath),
+    await sendMediaMessageWithRetry(client, chatId, () => createMessageMediaFromFile(filePath), sendOptions, {
+      label: filename,
+      onProgress: progressOptions.onProgress,
     });
   }
 }
 
-async function sendOggVoiceMessage(client, chatId, filePath, part) {
+async function sendOggVoiceMessage(client, chatId, filePath, part, progressOptions = {}) {
   const caption = normalizeCaption(part.caption);
   const captionPosition = part[CAPTION_POSITION];
   const filename = path.basename(filePath);
@@ -494,9 +505,15 @@ async function sendOggVoiceMessage(client, chatId, filePath, part) {
       },
       {
         label: filename,
+        mode: "voice",
+        onProgress: progressOptions.onProgress,
       },
     );
   } catch (voiceErr) {
+    emitMediaProgress(progressOptions, {
+      message: `Áudio ${filename}: envio como voz falhou; tentando como áudio comum.`,
+      type: "warning",
+    });
     await sendMediaMessageWithRetry(
       client,
       chatId,
@@ -508,6 +525,8 @@ async function sendOggVoiceMessage(client, chatId, filePath, part) {
       },
       {
         label: filename,
+        mode: "audio",
+        onProgress: progressOptions.onProgress,
         previousError: voiceErr,
       },
     );
@@ -532,7 +551,17 @@ async function sendMediaMessageWithRetry(client, chatId, mediaFactory, options =
         break;
       }
 
+      emitMediaProgress(context, {
+        attempt: attempt + 1,
+        message: `Retentando ${describeMediaSend(context)} após instabilidade do WhatsApp Web (${attempt + 1}/${MEDIA_SEND_RETRIES}).`,
+        type: "warning",
+      });
       await delay(MEDIA_SEND_RETRY_DELAY_MS * attempt);
+      emitMediaProgress(context, {
+        attempt: attempt + 1,
+        message: `Aguardando WhatsApp Web estabilizar para ${describeMediaSend(context)}.`,
+        type: "wait",
+      });
       await waitForWhatsAppMediaContext(client);
     }
   }
@@ -542,6 +571,35 @@ async function sendMediaMessageWithRetry(client, chatId, mediaFactory, options =
     : "";
   const label = context.label ? ` (${context.label})` : "";
   throw new Error(`Falha ao enviar anexo${label}: ${lastError.message || lastError}.${previous}`);
+}
+
+function describeMediaSend(context = {}) {
+  const label = context.label ? `anexo ${context.label}` : "anexo";
+
+  if (context.mode === "voice") {
+    return `${label} como áudio de voz`;
+  }
+
+  if (context.mode === "audio") {
+    return `${label} como áudio comum`;
+  }
+
+  return label;
+}
+
+function emitMediaProgress(context = {}, event = {}) {
+  if (typeof context.onProgress !== "function") {
+    return;
+  }
+
+  try {
+    context.onProgress({
+      media: true,
+      ...event,
+    });
+  } catch (_) {
+    // Progresso visual não pode interferir no envio.
+  }
 }
 
 function isTransientMediaSendError(err) {
