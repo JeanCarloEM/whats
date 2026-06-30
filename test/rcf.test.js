@@ -7,7 +7,10 @@
 
 process.env.MIN_DELAY_MS = "0";
 process.env.MAX_DELAY_MS = "0";
+process.env.MEDIA_CONTEXT_READY_TIMEOUT_MS = "60";
+process.env.MEDIA_CONTEXT_STABLE_MS = "0";
 process.env.MEDIA_SEND_RETRY_DELAY_MS = "0";
+process.env.MEDIA_SEND_RETRIES = "3";
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -42,6 +45,7 @@ const {
   getWindowsBrowserCandidates,
   hasRuntimeScriptsChanged,
   isOggAudioOnly,
+  isTransientMediaSendError,
   inspectTemplateSyntax,
   loadAlreadySent,
   loadClientes,
@@ -74,6 +78,7 @@ const {
   removeSession,
   listPersistedSessions,
   registerGuiInstance,
+  waitForWhatsAppMediaContext,
 } = require("../main");
 const {
   MAIN_TARBALL_URL,
@@ -1681,6 +1686,44 @@ test("retry de OGG usa mídia nova e fallback para áudio comum após falha tran
   assert.equal(mediaCalls[3].options.sendAudioAsVoice, false);
   assert.equal(mediaCalls[3].options.sendMediaAsDocument, false);
   assert.equal(mediaCalls[3].options.waitUntilMsgSent, true);
+});
+
+test("erro de frame destacado é transitório e aguarda contexto do WhatsApp voltar", async () => {
+  const { paths } = createFixture();
+  const mediaPath = path.join(path.dirname(paths.template), "audio.ogg");
+  fs.writeFileSync(mediaPath, createFakeOggAudio());
+
+  let evaluates = 0;
+  let sends = 0;
+  const client = {
+    pupPage: {
+      async evaluate() {
+        evaluates += 1;
+        return true;
+      },
+      isClosed() {
+        return false;
+      },
+    },
+    async sendMessage() {
+      sends += 1;
+
+      if (sends === 1) {
+        throw new Error("Attempted to use detached Frame 'ABC'.");
+      }
+    },
+  };
+
+  assert.equal(
+    isTransientMediaSendError(new Error("Attempted to use detached Frame 'ABC'.")),
+    true,
+  );
+  assert.equal(await waitForWhatsAppMediaContext(client), true);
+
+  await sendRenderedTemplate(client, "5511999999999@c.us", "![](audio.ogg)", paths);
+
+  assert.equal(sends, 2);
+  assert.ok(evaluates >= 2);
 });
 
 test("envia OGG externo absoluto com espaços usando nome seguro de arquivo", async () => {

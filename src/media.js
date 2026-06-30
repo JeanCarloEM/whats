@@ -17,8 +17,10 @@ const { hashValue } = require("./utils");
 const { parseTemplateParts } = require("./template");
 
 const CAPTION_POSITION = Symbol("captionPosition");
-const MEDIA_SEND_RETRIES = Math.max(1, readIntegerEnv("MEDIA_SEND_RETRIES", 3));
+const MEDIA_SEND_RETRIES = Math.max(1, readIntegerEnv("MEDIA_SEND_RETRIES", 5));
 const MEDIA_SEND_RETRY_DELAY_MS = readIntegerEnv("MEDIA_SEND_RETRY_DELAY_MS", 1200);
+const MEDIA_CONTEXT_READY_TIMEOUT_MS = readIntegerEnv("MEDIA_CONTEXT_READY_TIMEOUT_MS", 15000);
+const MEDIA_CONTEXT_STABLE_MS = readIntegerEnv("MEDIA_CONTEXT_STABLE_MS", 500);
 const AUDIO_OGG_MARKERS = [
   Buffer.from("OpusHead", "ascii"),
   Buffer.from([0x01, 0x76, 0x6f, 0x72, 0x62, 0x69, 0x73]),
@@ -521,6 +523,7 @@ async function sendMediaMessageWithRetry(client, chatId, mediaFactory, options =
 
   for (let attempt = 1; attempt <= MEDIA_SEND_RETRIES; attempt += 1) {
     try {
+      await waitForWhatsAppMediaContext(client);
       return await client.sendMessage(chatId, mediaFactory(), options);
     } catch (err) {
       lastError = err;
@@ -530,6 +533,7 @@ async function sendMediaMessageWithRetry(client, chatId, mediaFactory, options =
       }
 
       await delay(MEDIA_SEND_RETRY_DELAY_MS * attempt);
+      await waitForWhatsAppMediaContext(client);
     }
   }
 
@@ -542,7 +546,53 @@ async function sendMediaMessageWithRetry(client, chatId, mediaFactory, options =
 
 function isTransientMediaSendError(err) {
   const message = err && err.message ? err.message : String(err || "");
-  return /Protocol error|Runtime\.callFunctionOn|Promise was collected|Execution context was destroyed|Target closed|Session closed|Navigation|Timeout|ERR_/iu.test(message);
+  return /Protocol error|Runtime\.callFunctionOn|Promise was collected|Execution context was destroyed|detached Frame|Target closed|Session closed|Navigation|Timeout|ERR_|window\.require is not a function|sendIq called before startComms/iu.test(message);
+}
+
+async function waitForWhatsAppMediaContext(client, timeoutMs = MEDIA_CONTEXT_READY_TIMEOUT_MS) {
+  const page = client && client.pupPage;
+
+  if (!page || typeof page.evaluate !== "function") {
+    return true;
+  }
+
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    try {
+      if (typeof page.isClosed === "function" && page.isClosed()) {
+        throw new Error("Página do WhatsApp Web fechada.");
+      }
+
+      const ready = await page.evaluate(() => {
+        try {
+          return Boolean(
+            window.WWebJS &&
+              window.WWebJS.getChat &&
+              window.WWebJS.sendMessage &&
+              typeof window.require === "function" &&
+              window.require("WAWebCollections"),
+          );
+        } catch (_) {
+          return false;
+        }
+      });
+
+      if (ready) {
+        if (MEDIA_CONTEXT_STABLE_MS > 0) {
+          await delay(MEDIA_CONTEXT_STABLE_MS);
+        }
+
+        return true;
+      }
+    } catch (_) {
+      // Navegação ou frame destacado durante a espera: tenta novamente até o timeout.
+    }
+
+    await delay(300);
+  }
+
+  return false;
 }
 
 function delay(ms) {
@@ -574,5 +624,6 @@ module.exports = {
   resolveMediaPath,
   sendRenderedTemplate,
   sendMediaMessageWithRetry,
+  waitForWhatsAppMediaContext,
   validateTemplateMediaReferences,
 };
